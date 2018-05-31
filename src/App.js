@@ -13,12 +13,14 @@ class App extends Component {
     this.state = {
       ipfsHash:null,
       buffer:'',
+      fileExtBuff:'',
       encBuffer:'',
       encData:'',
       decData:'',
       permission:'',
-      accAddr:"", //Used for input forms, grantRead revokeRead
-      msgSender:"",
+      grantAccAddr:'', //Used for input forms, grantRead revokeRead
+      revokeAccAddr:'',
+      //msgSender:'',
       ethAddress:'',
       blockNumber:'',
       transactionHash:'',
@@ -26,25 +28,36 @@ class App extends Component {
       txReceipt: ''
     };
     //this.updateInputVal = this.updateInputVal.bind(this);
-    this.handleChange1 = this.handleChange1.bind(this);
-    this.handleChange2 = this.handleChange2.bind(this);
+    this.handleChange = this.handleChange.bind(this);
+    //this.handleChange2 = this.handleChange2.bind(this);
   }
 
 
 
-captureFile =(event) => {
+captureFile = async (event) => {
         event.stopPropagation()
         event.preventDefault()
         const file = event.target.files[0]
         let reader = new window.FileReader()
+        //console.log(file)
         reader.readAsArrayBuffer(file)
-        reader.onloadend = () => this.convertToBuffer(reader)
+        //await this.setState({fileExtBuff: Buffer.from(file.name.split('.').pop().toLowerCase())})
+        const fileExtBuff = Buffer.from(file.name.split('.').pop().toLowerCase());
+        const fileExtLen = Buffer.from(fileExtBuff.length.toString());
+        //console.log(this.state.fileExtBuff)
+        //console.log(fileExtLen.toString())
+        reader.onloadend = () => this.convertToBuffer(reader, fileExtBuff, fileExtLen);
         //this.convertToBuffer(this.state.encText)
       };
 
-convertToBuffer = async(reader) => {
+convertToBuffer = async(reader, fileExtBuff, fileExtLen) => {
       //file is converted to a buffer for upload to IPFS
-        const buffer = await Buffer.from(reader.result);
+        //const buffer = await reader.result + this.state.fileExtBuff;
+        const buff = await Buffer.from(reader.result); //alt+q = œ
+        //const arr = [buff, this.state.fileExtBuff];
+        const arr = [buff, fileExtBuff, fileExtLen];
+        const buffer = Buffer.concat(arr)
+        //console.log(buffer.toString())
       //set this buffer -using es6 syntax
         this.setState({buffer});
     };
@@ -105,8 +118,8 @@ onSubmit = async (event) => {
      //bring in user's metamask account address
       const accounts = await web3.eth.getAccounts();
       //obtain contract address from storehash.js
-        const ethAddress = await storehash.options.address;
-        this.setState({ethAddress});
+      const ethAddress = await storehash.options.address;
+      this.setState({ethAddress});
       /*//call a method in storehash(contract) in order to getTransaction
       storehash.methods.isOwner().call((err, transactionHash)=>{
         console.log(err, transactionHash);
@@ -150,7 +163,6 @@ onDecrypt = async (event) => {
   this.setState({ethAddress});
 
   storehash.methods.hasRead(accounts[0]).call((err, result) => {
-    console.log("9");
     console.log(result);
     this.setState({permission: result});
     if(this.state.permission === false) {
@@ -161,12 +173,13 @@ onDecrypt = async (event) => {
   if(this.state.permission){
     //get hash from contract
     storehash.methods.getHash().call( (err, result) => {
-      console.log(result);
+      //console.log(result);
       this.setState({ipfsHash: result[0].hash});
     }); //storehash, getHash()
     //get encrypted data from IPFS
     ipfs.files.cat(this.state.ipfsHash, (err, encData) => {
-      console.log(err, encData);
+      //console.log(err, encData);
+      console.log(err);
       this.setState({encData});
       this.decipher(this.state.encData);
     }); //ipfs cat
@@ -179,8 +192,20 @@ decipher (encData) {
   var decipher = crypto.createDecipher(algorithm, key);
   var decData = Buffer.concat([decipher.update(encData) , decipher.final()]);
   this.setState({decData});
-  console.log(decData.toString('utf8'));
-  fileDownload(this.state.decData, "hello-o.txt");
+  //console.log(this.state.decData);
+  /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+  //Find method of downloading buffer
+  //const ext = decData.split(/\n/).pop().toLowercase();
+  //const ext = decData.slice(-3);
+  /**/
+  var extLen = parseInt(decData.slice(-1).toString());
+  const ext = decData.slice(-(extLen+1), -1);
+  /**/
+  //console.log(this.state.decData.toString('utf8'));
+  //console.log("9", ext.toString());
+  //console.log(extLen)
+  //console.log(ext);
+  fileDownload(this.state.decData, "hello-o."+ext);
 }
 
 /*grantR = async(accAddr) => {
@@ -196,7 +221,7 @@ decipher (encData) {
 }*/
 
 grantRead = async (accAddr) => {
-  const accounts = web3.eth.getAccounts();
+  //const accounts = web3.eth.getAccounts();
   await storehash.methods.hasRead(accAddr).call((err, result) => {
     console.log(result);
     this.setState({permission: result});
@@ -209,7 +234,7 @@ grantRead = async (accAddr) => {
         this.setState({transactionHash});
         //this.setState({permission: !this.state.permission});
         //console.log(this.state.permission);
-        storehash.methods.hasRead(accounts[0]).call((err, result) => {
+        storehash.methods.hasRead(accAddr).call((err, result) => {
           console.log(result);
           this.setState({permission: result});
         });
@@ -229,27 +254,27 @@ grantReadSubmit = async (event) => {
   } else {
     alert("That is not a valid address within the network.");
   }*/
-  this.grantRead(this.state.accAddr);
+  this.grantRead(this.state.grantAccAddr);
   //this.grantRead();
 }
 
-revokeRead = async () => {
-  const accounts = web3.eth.getAccounts();
-  await storehash.methods.hasRead(this.state.accAddr).call((err, result) => {
+revokeRead = async (accAddr) => {
+  //const accounts = web3.eth.getAccounts();
+  await storehash.methods.hasRead(accAddr).call((err, result) => {
     console.log(result);
     this.setState({permission: result});
     if(this.state.permission){
-      storehash.methods.revokeRead(this.state.accAddr).send({from: "0xc9FD87a52Cd94E29b6Ba434036ddAA66c0Eaf5e8"}, (err,transactionHash)=>{
+      storehash.methods.revokeRead(accAddr).send({from: "0xc9FD87a52Cd94E29b6Ba434036ddAA66c0Eaf5e8"}, (err,transactionHash)=>{
         console.log(transactionHash);
         this.setState({transactionHash});
         //this.setState({permission: !this.state.permission});
         //console.log(this.state.permission);
-        storehash.methods.hasRead(this.state.accAddr).call((err, result) => {
+        storehash.methods.hasRead(accAddr).call((err, result) => {
           console.log(result);
           this.setState({permission: result});
         });
       }); //revokeRead
-      alert(this.state.accAddr.toString() + " has been revoked read access.");
+      alert(accAddr.toString() + " has been revoked read access.");
     } else {
       alert("This address doesn't have permission anyway.")
     } //if state.permission
@@ -258,7 +283,7 @@ revokeRead = async () => {
 revokeReadSubmit = async (event) => {
   event.preventDefault();
   //this.revokeRead(this.state.accAddr);
-  this.revokeRead();
+  this.revokeRead(this.state.revokeAccAddr);
 }
 
 /*updateInputVal(event) {
@@ -268,12 +293,12 @@ revokeReadSubmit = async (event) => {
 /*updateInputVal(evt) {
   this.setState({[evt.target.accAddr]: evt.target.value});
 }*/
-handleChange1(event) {
-  this.setState({accAddr: event.target.value});
+handleChange(event) {
+  this.setState({[event.target.name]: event.target.value});
 }
-handleChange2(event) {
+/*handleChange2(event) {
   this.setState({accAddr: event.target.value});
-}
+}*/
 
 render() {
 
@@ -344,7 +369,7 @@ render() {
                     <form onSubmit={this.grantReadSubmit}>
                       <label>
                         Address:
-                        <input type="text1" value={this.state.accAddr} onChange={this.handleChange1}/>
+                        <input type="text1" name="grantAccAddr" /*value={this.state.grantAccAddr}*/ onChange={this.handleChange}/>
                       </label>
                       <input type="submit" value="Submit" />
                     </form>
@@ -354,7 +379,7 @@ render() {
                     <form onSubmit={this.revokeReadSubmit}>
                       <label>
                         Address:
-                        <input type="text2" value={this.state.accAddr} onChange={this.handleChange2}/>
+                        <input type="text2" name="revokeAccAddr" /*value={this.state.revokeAccAddr}*/ onChange={this.handleChange}/>
                       </label>
                       <input type="submit" value="Submit" />
                     </form>
